@@ -110,9 +110,10 @@ def main():
         for computer in graduating_computers:
 
             logger.info(
-                f"{computer['username']} | "
-                f"{computer['computer_name']} | "
-                f"{computer['serial_number']}"
+                f"ID: {computer['jamf_id']} | "
+                f"Username: {computer['username']} | "
+                f"Computer Name: {computer['computer_name']} | "
+                f"Serial Number: {computer['serial_number']}"
             )
 
         logger.info("Process completed successfully")
