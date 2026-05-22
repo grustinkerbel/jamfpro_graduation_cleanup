@@ -121,51 +121,28 @@ def get_all_computers(
     return computers
 
 
-def normalize_computer_record(
-    computer: Dict[str, Any]
-) -> Dict[str, Any]:
-    """
-    Normalize Jamf computer inventory record into
-    a simplified structure for automation workflows.
-    """
+def normalize_computer_record(computer: Dict[str, Any]) -> Dict[str, Any]:
+
+    general = computer.get("general", {})
+    mdm_capable = general.get("mdmCapable", {})
+
+    capable_users = mdm_capable.get("capableUsers", [])
+
+    username = None
+    if isinstance(capable_users, list) and len(capable_users) > 0:
+        username = capable_users[0]
 
     return {
 
-        "jamf_id":
-            get_nested(computer, ["id"]),
-
-        "computer_name":
-            get_nested(computer, ["general", "name"]),
-
-        "asset_tag":
-            get_nested(computer, ["general", "assetTag"]),
-
-        "serial_number":
-            get_nested(computer, ["hardware", "serialNumber"]),
-
-        "model":
-            get_nested(computer, ["hardware", "model"]),
-
-        "processor_type":
-            get_nested(computer, ["hardware", "processorType"]),
-
-        "username":
-            get_nested(computer, ["userAndLocation", "username"]),
-
-        "real_name":
-            get_nested(computer, ["userAndLocation", "realname"]),
-
-        "email":
-            get_nested(computer, ["userAndLocation", "email"]),
-
-        "last_contact_time":
-            get_nested(computer, ["general", "lastContactTime"]),
-
-        "last_reported_ip":
-            get_nested(computer, ["general", "lastReportedIp"]),
-
-        "managed":
-            get_nested(computer, ["general", "remoteManagement", "managed"])
+        "jamf_id": computer.get("id"),
+        "computer_name": general.get("name"),
+        "asset_tag": general.get("assetTag"),
+        "serial_number": computer.get("hardware", {}).get("serialNumber"),
+        "model": computer.get("hardware", {}).get("model"),
+        "username": username,
+        "last_contact_time": general.get("lastContactTime"),
+        "last_reported_ip": general.get("lastReportedIpV4"),
+        "managed": general.get("remoteManagement", {}).get("managed")
     }
 
 
@@ -174,30 +151,27 @@ def get_graduating_computers(
     graduation_year: str
 ) -> List[Dict[str, Any]]:
     """
-    Filter inventory records by graduating class year.
+    Filter inventory records by graduating_computers class year.
 
     Example:
         username ending in 2026
     """
-
     graduating_computers = []
 
+    year_suffix = str(graduation_year)[-2:]
+    
     for computer in computers:
 
         normalized = normalize_computer_record(computer)
 
         username = normalized.get("username")
 
-        if not username:
-            continue
-
-        if username.endswith(graduation_year):
-
+        if username and username.endswith(year_suffix):
             graduating_computers.append(normalized)
 
     logging.info(
         f"Found {len(graduating_computers)} "
-        f"graduating student computers"
+        f"graduating_computers student computers"
     )
 
     return graduating_computers
