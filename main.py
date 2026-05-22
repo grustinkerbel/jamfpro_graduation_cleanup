@@ -111,9 +111,9 @@ def main():
 
             logger.info(
                 f"ID: {computer['jamf_id']} | "
-                f"Username: {computer['username']} | "
-                f"Computer Name: {computer['computer_name']} | "
-                f"Serial Number: {computer['serial_number']}"
+                f"UserName: {computer['username']} | "
+                f"ComputerName: {computer['computer_name']} | "
+                f"SerialNumber: {computer['serial_number']}"
             )
 
         logger.info("Process completed successfully")
