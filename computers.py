@@ -1,137 +1,203 @@
 """
-Jamf Graduation Device Cleanup
-
-Author: William Galway
-Date: 2026-05-22
-Version: 1.0
-
-Description:
-Retrieves Jamf Pro computer inventory records and identifies
-graduating student devices based on username suffix matching
-the current graduation year.
+Jamf Pro Computer Inventory Functions
+-------------------------------------
+Utilities for retrieving, filtering, and processing
+Jamf Pro computer inventory data.
 """
 
-import os
-import sys
 import logging
+import requests
 
-from datetime import datetime
-
-from common.auth import get_jamf_token
-from jamf.computers import (
-    get_all_computers,
-    get_graduating_computers
-)
-
-from utils.logging_setup import setup_logging
+from typing import List, Dict, Any
 
 
-# =========================================================
-#                      CONFIGURATION
-# =========================================================
-
-CLIENT_ID = os.getenv("JAMF_CLIENT_ID")
-CLIENT_SECRET = os.getenv("JAMF_CLIENT_SECRET")
-
-jamf_pro_url = "https://nmh.jamfcloud.com"
-
-CURRENT_YEAR = str(datetime.now().year)
-
-if not all([CLIENT_ID, CLIENT_SECRET]):
-    raise ValueError("Missing one or more credentials.")
-
-logfile = "/home/wgalway/logs/jamf_graduation_cleanup.log"
-
-logger = setup_logging(logfile)
-
-logger.info("Script started")
-logger.info(f"Python version: {sys.version}")
-logger.info("Jamf Graduation Cleanup initialized")
-
-json_filename = "graduating_devices.json"
-csv_filename = "graduating_devices.csv"
+DEFAULT_SECTIONS = [
+    "GENERAL",
+    "HARDWARE",
+    "USER_AND_LOCATION"
+]
 
 
-# =========================================================
-#                          MAIN
-# =========================================================
+def get_nested(
+    record: Dict[str, Any],
+    keys: List[str],
+    default=None
+):
+    """
+    Safely retrieve nested dictionary values.
+    """
 
-def main():
+    value = record
 
-    try:
+    for key in keys:
 
-        # -------------------------------------------------
-        # AUTHENTICATION
-        # -------------------------------------------------
+        if not isinstance(value, dict):
+            return default
 
-        auth = get_jamf_token(
-            jamf_pro_url,
-            CLIENT_ID,
-            CLIENT_SECRET
-        )
+        value = value.get(key)
 
-        if not auth:
+        if value is None:
+            return default
 
-            logger.error("Authentication failed")
+    return value
 
-            return
 
-        token = auth["access_token"]
+def get_all_computers(
+    base_url: str,
+    token: str,
+    sections: List[str] = None,
+    page_size: int = 100,
+    sort: str = "general.assetTag"
+) -> List[Dict[str, Any]]:
+    """
+    Retrieve all computer inventory records from Jamf Pro.
+    """
 
-        logger.info("Authentication successful")
+    if sections is None:
+        sections = DEFAULT_SECTIONS
 
-        # -------------------------------------------------
-        # RETRIEVE COMPUTER INVENTORY
-        # -------------------------------------------------
+    computers = []
 
-        computers = get_all_computers(
-            base_url=jamf_pro_url,
-            token=token
-        )
+    page = 0
 
-        logger.info(
-            f"Retrieved {len(computers)} "
-            f"computer inventory records"
-        )
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json"
+    }
 
-        # -------------------------------------------------
-        # FILTER GRADUATING DEVICES
-        # -------------------------------------------------
+    params = {
+        "section": sections,
+        "page-size": page_size,
+        "sort": sort
+    }
 
-        graduating_computers = get_graduating_computers(
-            computers=computers,
-            graduation_year=CURRENT_YEAR
-        )
+    base_url = base_url.rstrip("/")
 
-        logger.info(
-            f"Found {len(graduating_computers)} "
-            f"graduating student devices"
-        )
+    url = f"{base_url}/api/v1/computers-inventory"
 
-        # -------------------------------------------------
-        # DISPLAY RESULTS
-        # -------------------------------------------------
+    while True:
 
-        for computer in graduating_computers:
+        params["page"] = page
 
-            logger.info(
-                f"{computer['username']} | "
-                f"{computer['computer_name']} | "
-                f"{computer['serial_number']}"
+        try:
+
+            response = requests.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=30
             )
 
-        logger.info("Process completed successfully")
+            response.raise_for_status()
 
-    except Exception as e:
+            data = response.json()
 
-        logger.error(
-            f"Error during graduation cleanup workflow: {e}"
-        )
+            results = data.get("results", [])
 
-    finally:
+            if not results:
+                break
 
-        logger.info("Script finished")
+            computers.extend(results)
+
+            logging.info(
+                f"Retrieved page {page} "
+                f"({len(results)} records)"
+            )
+
+            page += 1
+
+        except requests.exceptions.RequestException as err:
+
+            logging.error(
+                f"Failed retrieving page {page}: {err}"
+            )
+
+            break
+
+    logging.info(
+        f"Retrieved {len(computers)} total computers"
+    )
+
+    return computers
 
 
-if __name__ == "__main__":
-    main()
+def normalize_computer_record(
+    computer: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Normalize Jamf computer inventory record into
+    a simplified structure for automation workflows.
+    """
+
+    return {
+
+        "jamf_id":
+            get_nested(computer, ["id"]),
+
+        "computer_name":
+            get_nested(computer, ["general", "name"]),
+
+        "asset_tag":
+            get_nested(computer, ["general", "assetTag"]),
+
+        "serial_number":
+            get_nested(computer, ["hardware", "serialNumber"]),
+
+        "model":
+            get_nested(computer, ["hardware", "model"]),
+
+        "processor_type":
+            get_nested(computer, ["hardware", "processorType"]),
+
+        "username":
+            get_nested(computer, ["userAndLocation", "username"]),
+
+        "real_name":
+            get_nested(computer, ["userAndLocation", "realname"]),
+
+        "email":
+            get_nested(computer, ["userAndLocation", "email"]),
+
+        "last_contact_time":
+            get_nested(computer, ["general", "lastContactTime"]),
+
+        "last_reported_ip":
+            get_nested(computer, ["general", "lastReportedIp"]),
+
+        "managed":
+            get_nested(computer, ["general", "remoteManagement", "managed"])
+    }
+
+
+def get_graduating_computers(
+    computers: List[Dict[str, Any]],
+    graduation_year: str
+) -> List[Dict[str, Any]]:
+    """
+    Filter inventory records by graduating class year.
+
+    Example:
+        username ending in 2026
+    """
+
+    graduating_computers = []
+
+    for computer in computers:
+
+        normalized = normalize_computer_record(computer)
+
+        username = normalized.get("username")
+
+        if not username:
+            continue
+
+        if username.endswith(graduation_year):
+
+            graduating_computers.append(normalized)
+
+    logging.info(
+        f"Found {len(graduating_computers)} "
+        f"graduating student computers"
+    )
+
+    return graduating_computers
