@@ -103,11 +103,6 @@ def main():
             graduation_year=CURRENT_YEAR
         )
 
-        logger.info(
-            f"Found {len(graduating_computers)} "
-            f"graduating student devices"
-        )
-
         # -------------------------------------------------
         # DISPLAY RESULTS
         # -------------------------------------------------
